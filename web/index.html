@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<style>body{margin:0}</style>
+<title>Пьяный кубик</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="theme-color" content="#140b06">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Russo+One&family=Rubik:wght@400;600&display=swap">
+<style>
+/* Layout: full-screen 3D bar table under a warm lamp; title and hint float over it, verdict pops in the middle */
+:root {
+  --night: #140b06;
+  --lamp: #f2a33a;
+  --foam: #fff4dc;
+  --ink: #2a1306;
+  --muted: #c9a57a;
+  --display: "Russo One", "Arial Black", Impact, sans-serif;
+  --body: "Rubik", "Segoe UI", Roboto, sans-serif;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body {
+  background: var(--night);
+  color: var(--foam);
+  font-family: var(--body);
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+#scene { position: fixed; inset: 0; }
+#scene canvas { display: block; width: 100%; height: 100%; cursor: pointer; }
+.vignette {
+  position: fixed; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse 80% 70% at 50% 50%, transparent 55%, rgba(0,0,0,.65));
+}
+.hud {
+  position: fixed; inset: 0; pointer-events: none;
+  display: flex; flex-direction: column; justify-content: space-between; align-items: center;
+  padding-top: calc(18px + env(safe-area-inset-top, 0px));
+  padding-bottom: calc(22px + env(safe-area-inset-bottom, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  text-align: center;
+}
+h1 {
+  font-family: var(--display); font-weight: 400;
+  font-size: clamp(22px, 7vw, 34px);
+  margin: 0; letter-spacing: .02em;
+  color: var(--lamp);
+  text-shadow: 0 2px 0 #000, 0 0 24px rgba(242,163,58,.45);
+}
+.sub { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+.foot { display: grid; gap: 6px; }
+.hint { color: var(--muted); font-size: 15px; text-shadow: 0 1px 2px #000; }
+.count { font-size: 13px; color: var(--muted); opacity: .8; font-variant-numeric: tabular-nums; min-height: 1em; }
+.mode {
+  all: unset; box-sizing: border-box; cursor: pointer; pointer-events: auto;
+  justify-self: center; display: flex; padding: 4px; border-radius: 999px;
+  background: rgba(20,11,6,.78); border: 1px solid rgba(201,165,122,.35);
+  box-shadow: 0 4px 18px rgba(0,0,0,.5);
+}
+.mode span {
+  min-height: 40px; min-width: 110px; padding: 0 18px; display: grid; place-items: center;
+  border-radius: 999px; font-family: var(--display); font-size: 15px; letter-spacing: .03em;
+  color: var(--muted); transition: background .2s, color .2s;
+}
+.mode span.on { background: var(--lamp); color: var(--ink); }
+.mode:focus-visible { outline: 3px solid var(--lamp); outline-offset: 3px; }
+
+.verdict {
+  position: fixed; inset: 0; display: grid; place-items: start center; pointer-events: none;
+  padding-top: calc(104px + env(safe-area-inset-top, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.verdict span {
+  font-family: var(--display);
+  font-size: clamp(38px, 13vw, 84px);
+  line-height: 1.02; text-align: center; text-transform: uppercase; text-wrap: balance;
+  color: var(--foam);
+  -webkit-text-stroke: 2px var(--ink); paint-order: stroke fill;
+  text-shadow: 0 6px 0 #000, 0 0 40px rgba(242,163,58,.9);
+  transform: scale(.2) rotate(-8deg); opacity: 0;
+}
+.verdict.show span { animation: pop .55s cubic-bezier(.2,1.6,.4,1) forwards; }
+.verdict.hide span { animation: out .25s ease forwards; }
+@keyframes pop { to { transform: scale(1) rotate(-4deg); opacity: 1 } }
+@keyframes out {
+  from { transform: scale(1) rotate(-4deg); opacity: 1 }
+  to   { transform: scale(1.3) rotate(-4deg); opacity: 0 }
+}
+.notes { display: grid; gap: 8px; justify-items: center; }
+.note {
+  font-family: var(--display); font-size: clamp(26px, min(9vw, 7vh), 46px); line-height: 1.05;
+  text-transform: uppercase; text-wrap: balance; text-align: center;
+  color: #fff;
+  -webkit-text-stroke: 3px var(--ink); paint-order: stroke fill;
+  text-shadow: 0 4px 0 #000, 0 0 26px rgba(0,0,0,.8);
+}
+.note:empty { display: none; }
+.note:not(:empty) { animation: notein .45s cubic-bezier(.2,1.5,.4,1); }
+@keyframes notein { from { transform: scale(.4); opacity: 0 } to { transform: scale(1); opacity: 1 } }
+.vbox { display: grid; justify-items: center; gap: 12px; }
+.err { position: fixed; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: var(--muted); }
+</style>
+
+<div id="scene" role="button" aria-label="Бросить кубик" tabindex="0"></div>
+<div class="vignette"></div>
+<div class="hud">
+  <header>
+    <h1>Пьяный кубик</h1>
+    <p class="sub" id="sub">Пусть решит судьба, что сегодня в стакане</p>
+  </header>
+  <footer class="foot">
+    <div class="notes" aria-live="polite"><div class="note" id="vwarn"></div><div class="note" id="vbottom"></div></div>
+    <button class="mode" id="mode" type="button" aria-label="Переключить режим кубика"><span data-m="drink" class="on">Выпивка</span><span data-m="grams">Граммы</span></button>
+    <div class="hint" id="hint">Нажми на кубик</div>
+    <div class="count" id="count"></div>
+  </footer>
+</div>
+<div class="verdict" id="verdict" aria-live="polite"><div class="vbox"><span id="vtext"></span></div></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(() => {
+  const host = document.getElementById("scene");
+  if (!window.THREE) {
+    host.innerHTML = '<div class="err">Не удалось загрузить 3D-движок. Проверьте интернет и обновите страницу.</div>';
+    return;
+  }
+  const T3 = THREE;
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // Values per BoxGeometry face group: +x, -x, +y, -y, +z, -z (opposites sum to 7)
+  const MODES = {
+    drink: { sub: "Пусть решит судьба, что сегодня в стакане", t: { 1: "Не пью", 2: "Бухну пивка", 3: "Дерну винишка", 4: "Накидаюсь самогоном", 5: "Хлебну коньячка", 6: "Бухаю по черному" } },
+    grams: { sub: "Пусть судьба отмерит, сколько налить", t: { 1: "10 грамм", 2: "20 грамм", 3: "30 грамм", 4: "40 грамм", 5: "50 грамм", 6: "60 грамм" } }
+  };
+  let mode = "drink";
+  let TEXTS = MODES.drink.t;
+  const GROUP_VAL = [2, 5, 1, 6, 3, 4];
+  const NORMALS = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]].map(a => new T3.Vector3(...a));
+  const TEXT_UP = [[0,1,0],[0,1,0],[0,0,-1],[0,0,1],[0,1,0],[0,1,0]].map(a => new T3.Vector3(...a));
+
+  // ---------- renderer / scene ----------
+  const renderer = new T3.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+  renderer.outputEncoding = T3.sRGBEncoding;
+  renderer.toneMapping = T3.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.05;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = T3.PCFSoftShadowMap;
+  host.appendChild(renderer.domElement);
+
+  const scene = new T3.Scene();
+  scene.background = new T3.Color(0x140b06);
+  const camera = new T3.PerspectiveCamera(36, 1, 0.1, 100);
+  const camDir = new T3.Vector3(0, 0.80, 0.60).normalize();
+  const camTarget = new T3.Vector3(0, 0.7, 1.1);
+
+  // warm bar-room reflections from a painted equirect
+  (() => {
+    const c = document.createElement("canvas"); c.width = 512; c.height = 256;
+    const g = c.getContext("2d");
+    const grd = g.createLinearGradient(0, 0, 0, 256);
+    grd.addColorStop(0, "#5a3b22"); grd.addColorStop(.5, "#2a170c"); grd.addColorStop(1, "#0d0704");
+    g.fillStyle = grd; g.fillRect(0, 0, 512, 256);
+    const blob = (x, y, r, col) => { const rg = g.createRadialGradient(x, y, 0, x, y, r); rg.addColorStop(0, col); rg.addColorStop(1, "rgba(0,0,0,0)"); g.fillStyle = rg; g.fillRect(0, 0, 512, 256); };
+    blob(300, 30, 70, "rgba(255,220,160,1)");
+    blob(90, 70, 50, "rgba(255,170,90,.6)");
+    blob(440, 90, 40, "rgba(255,200,140,.4)");
+    const tex = new T3.CanvasTexture(c);
+    tex.mapping = T3.EquirectangularReflectionMapping;
+    tex.encoding = T3.sRGBEncoding;
+    const pm = new T3.PMREMGenerator(renderer);
+    scene.environment = pm.fromEquirectangular(tex).texture;
+    tex.dispose(); pm.dispose();
+  })();
+
+  scene.add(new T3.HemisphereLight(0xffe2b8, 0x2a160a, 0.35));
+  const lamp = new T3.SpotLight(0xffd29a, 2.2, 40, 0.62, 0.75, 1.2);
+  lamp.position.set(2.2, 11, 3.5);
+  lamp.target.position.set(0, 0, 0);
+  lamp.castShadow = true;
+  lamp.shadow.mapSize.set(2048, 2048);
+  lamp.shadow.bias = -0.0004;
+  lamp.shadow.radius = 4;
+  lamp.shadow.camera.near = 4; lamp.shadow.camera.far = 22;
+  scene.add(lamp, lamp.target);
+  const fill = new T3.DirectionalLight(0xffb070, 0.25);
+  fill.position.set(-5, 4, 6);
+  scene.add(fill);
+
+  // ---------- wooden table ----------
+  const woodTex = (() => {
+    const W = 1024, c = document.createElement("canvas"); c.width = c.height = W;
+    const g = c.getContext("2d");
+    g.fillStyle = "#4a2914"; g.fillRect(0, 0, W, W);
+    const plank = W / 4;
+    for (let p = 0; p < 4; p++) {
+      const x0 = p * plank, hue = 22 + Math.random() * 6, l = 20 + Math.random() * 6;
+      g.fillStyle = `hsl(${hue},55%,${l}%)`; g.fillRect(x0, 0, plank, W);
+      for (let i = 0; i < 70; i++) {
+        const x = x0 + Math.random() * plank, amp = 3 + Math.random() * 10, f = .004 + Math.random() * .01, ph = Math.random() * 6;
+        g.strokeStyle = `rgba(${Math.random() < .5 ? "20,8,2" : "120,70,35"},${.12 + Math.random() * .22})`;
+        g.lineWidth = .6 + Math.random() * 2.2;
+        g.beginPath();
+        for (let y = 0; y <= W; y += 8) { const xx = x + Math.sin(y * f + ph) * amp; y ? g.lineTo(xx, y) : g.moveTo(xx, y); }
+        g.stroke();
+      }
+      g.fillStyle = "rgba(0,0,0,.55)"; g.fillRect(x0, 0, 3, W);
+      g.fillStyle = "rgba(255,200,150,.06)"; g.fillRect(x0 + 3, 0, 2, W);
+    }
+    const t = new T3.CanvasTexture(c);
+    t.encoding = T3.sRGBEncoding;
+    t.wrapS = t.wrapT = T3.RepeatWrapping;
+    t.repeat.set(2.5, 2.5);
+    t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    return t;
+  })();
+  const table = new T3.Mesh(
+    new T3.PlaneGeometry(40, 40),
+    new T3.MeshStandardMaterial({ map: woodTex, roughness: 0.62, metalness: 0, envMapIntensity: 0.5 })
+  );
+  table.rotation.x = -Math.PI / 2;
+  table.receiveShadow = true;
+  scene.add(table);
+
+  // ---------- die ----------
+  const H = 1, R = 0.2; // half size, edge radius
+  const geo = new T3.BoxGeometry(2 * H, 2 * H, 2 * H, 28, 28, 28);
+  (() => {
+    const pos = geo.attributes.position, nor = geo.attributes.normal;
+    const p = new T3.Vector3(), inner = new T3.Vector3(), d = new T3.Vector3(), lim = H - R;
+    for (let i = 0; i < pos.count; i++) {
+      p.fromBufferAttribute(pos, i);
+      inner.set(T3.MathUtils.clamp(p.x, -lim, lim), T3.MathUtils.clamp(p.y, -lim, lim), T3.MathUtils.clamp(p.z, -lim, lim));
+      d.subVectors(p, inner);
+      if (d.lengthSq() > 1e-12) {
+        d.normalize();
+        p.copy(inner).addScaledVector(d, R);
+        pos.setXYZ(i, p.x, p.y, p.z);
+        nor.setXYZ(i, d.x, d.y, d.z);
+      }
+    }
+    pos.needsUpdate = nor.needsUpdate = true;
+  })();
+
+  function wrapLines(g, text, maxW) {
+    const words = text.split(" "), lines = [];
+    let cur = "";
+    for (const w of words) {
+      const t = cur ? cur + " " + w : w;
+      if (g.measureText(t).width > maxW && cur) { lines.push(cur); cur = w; } else cur = t;
+    }
+    lines.push(cur);
+    return lines;
+  }
+  function paintFace(val, colorCtx, bumpCtx, S) {
+    // ivory base
+    const g = colorCtx;
+    const base = g.createRadialGradient(S * .35, S * .3, S * .05, S * .5, S * .5, S * .75);
+    base.addColorStop(0, "#fffaf0"); base.addColorStop(1, "#ece0c8");
+    g.fillStyle = base; g.fillRect(0, 0, S, S);
+    for (let i = 0; i < 2500; i++) {
+      g.fillStyle = `rgba(${Math.random() < .5 ? "120,90,50" : "255,255,255"},${Math.random() * .05})`;
+      g.fillRect(Math.random() * S, Math.random() * S, 2, 2);
+    }
+    const b = bumpCtx;
+    b.fillStyle = "#fff"; b.fillRect(0, 0, S, S);
+    b.filter = "blur(3px)";
+
+    // pips in a row near the top
+    const pr = S * (val > 4 ? .034 : .04), gap = pr * 2.7;
+    const py = S * .27, startX = S / 2 - (gap * (val - 1)) / 2;
+    for (let i = 0; i < val; i++) {
+      const x = startX + gap * i;
+      const rg = g.createRadialGradient(x + pr * .35, py + pr * .35, pr * .1, x, py, pr);
+      rg.addColorStop(0, "#d8382e"); rg.addColorStop(.75, "#a51e17"); rg.addColorStop(1, "#5e0c08");
+      g.fillStyle = rg; g.beginPath(); g.arc(x, py, pr, 0, Math.PI * 2); g.fill();
+      b.fillStyle = "#000"; b.beginPath(); b.arc(x, py, pr, 0, Math.PI * 2); b.fill();
+    }
+
+    // engraved text
+    const text = TEXTS[val].toUpperCase();
+    const maxW = S * .68;
+    let size = S * (mode === "grams" ? .2 : .14), lines;
+    for (;;) {
+      g.font = `${size}px "Russo One", "Arial Black", Impact, sans-serif`;
+      lines = wrapLines(g, text, maxW);
+      const widest = Math.max(...lines.map(l => g.measureText(l).width));
+      if ((widest <= maxW && lines.length * size * 1.08 <= S * .42) || size < 20) break;
+      size -= 2;
+    }
+    const lh = size * 1.08, top = S * .6 - (lines.length * lh) / 2 + lh / 2;
+    g.textAlign = b.textAlign = "center"; g.textBaseline = b.textBaseline = "middle";
+    b.font = g.font;
+    lines.forEach((l, i) => {
+      const y = top + i * lh;
+      g.fillStyle = "rgba(255,255,255,.7)"; g.fillText(l, S / 2 + 1.5, y + 2);
+      g.fillStyle = "#2a1306"; g.fillText(l, S / 2, y);
+      b.fillStyle = "#000"; b.fillText(l, S / 2, y);
+    });
+    b.filter = "none";
+  }
+
+  const S = 512;
+  const faceTex = GROUP_VAL.map(() => {
+    const c = document.createElement("canvas"); c.width = c.height = S;
+    const bc = document.createElement("canvas"); bc.width = bc.height = S;
+    const map = new T3.CanvasTexture(c); map.encoding = T3.sRGBEncoding;
+    map.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    const bump = new T3.CanvasTexture(bc);
+    return { c, bc, map, bump };
+  });
+  function drawAllFaces() {
+    GROUP_VAL.forEach((v, i) => {
+      const f = faceTex[i];
+      paintFace(v, f.c.getContext("2d"), f.bc.getContext("2d"), S);
+      f.map.needsUpdate = f.bump.needsUpdate = true;
+    });
+  }
+  drawAllFaces();
+  if (document.fonts && document.fonts.load) {
+    document.fonts.load('40px "Russo One"', "АБВ").then(drawAllFaces).catch(() => {});
+  }
+
+  const mats = faceTex.map(f => new T3.MeshPhysicalMaterial({
+    map: f.map, bumpMap: f.bump, bumpScale: 0.035,
+    roughness: 0.34, metalness: 0, clearcoat: 0.7, clearcoatRoughness: 0.18, envMapIntensity: 0.9
+  }));
+  const die = new T3.Mesh(geo, mats);
+  die.castShadow = true;
+  die.receiveShadow = true;
+  scene.add(die);
+
+  // ---------- orientation helpers ----------
+  const UP = new T3.Vector3(0, 1, 0);
+  function restQuat(group, jitter) {
+    const align = new T3.Quaternion().setFromUnitVectors(NORMALS[group], UP);
+    const tu = TEXT_UP[group].clone().applyQuaternion(align);
+    const phi = Math.atan2(tu.x, tu.z);
+    const yaw = Math.PI - phi + (Math.random() * 2 - 1) * jitter;
+    return new T3.Quaternion().setFromAxisAngle(UP, yaw).multiply(align);
+  }
+  const m4 = new T3.Matrix4();
+  function supportHeight(q) {
+    m4.makeRotationFromQuaternion(q);
+    const e = m4.elements;
+    return (H - R) * (Math.abs(e[1]) + Math.abs(e[5]) + Math.abs(e[9])) + R;
+  }
+
+  // ---------- layout ----------
+  let range = { x: 1, z: 1 };
+  function resize() {
+    const w = host.clientWidth || innerWidth, h = host.clientHeight || innerHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    const tanH = Math.tan(T3.MathUtils.degToRad(camera.fov / 2));
+    range = { x: camera.aspect < 1 ? 0.55 : 1.4, z: 0.9 };
+    const needW = range.x + 1.6;
+    const dist = Math.max(10.5, needW / (tanH * camera.aspect));
+    camera.position.copy(camTarget).addScaledVector(camDir, dist);
+    camera.lookAt(camTarget);
+    camera.updateProjectionMatrix();
+  }
+  addEventListener("resize", resize);
+  resize();
+
+  // ---------- sound ----------
+  let actx = null;
+  function clack(vol) {
+    if (!actx || vol < 0.02) return;
+    const t = actx.currentTime, len = 0.07;
+    const buf = actx.createBuffer(1, actx.sampleRate * len, actx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 5);
+    const src = actx.createBufferSource(); src.buffer = buf;
+    const bp = actx.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 1700 + Math.random() * 900; bp.Q.value = 3;
+    const lp = actx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 5000;
+    const gn = actx.createGain(); gn.gain.setValueAtTime(Math.min(1, vol) * 0.9, t);
+    src.connect(bp).connect(lp).connect(gn).connect(actx.destination);
+    src.start(t);
+    try { navigator.vibrate && navigator.vibrate(Math.round(10 + vol * 25)); } catch (e) {}
+  }
+
+  // ---------- state ----------
+  const startGroup = GROUP_VAL.indexOf(1);
+  const state = { q: restQuat(startGroup, 0.15), x: 0, z: 0, rolling: false, rolls: 0, anim: null };
+  die.quaternion.copy(state.q);
+  die.position.set(0, H, 0);
+
+  const verdict = document.getElementById("verdict");
+  const vtext = document.getElementById("vtext");
+  const vwarn = document.getElementById("vwarn");
+  const vbottom = document.getElementById("vbottom");
+  const hint = document.getElementById("hint");
+  const count = document.getElementById("count");
+
+  const BOUNCES = reduced
+    ? [{ d: .35, h: .4 }]
+    : [{ d: .66, h: 2.8 }, { d: .32, h: .55 }, { d: .18, h: .14 }, { d: .1, h: .035 }];
+  const SETTLE = reduced ? .05 : .22;
+
+  function roll() {
+    if (state.rolling) return;
+    state.rolling = true;
+    if (!actx) { try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
+    if (actx && actx.state === "suspended") actx.resume();
+
+    verdict.classList.remove("show");
+    if (vtext.textContent) verdict.classList.add("hide");
+    hint.textContent = "Летит…";
+
+    const val = 1 + Math.floor(Math.random() * 6);
+    const group = GROUP_VAL.indexOf(val);
+    const qf = restQuat(group, 0.3);
+
+    let nx, nz, tries = 0;
+    do {
+      nx = (Math.random() * 2 - 1) * range.x;
+      nz = (Math.random() * 2 - 1) * range.z;
+    } while (Math.hypot(nx - state.x, nz - state.z) < 0.6 && ++tries < 10);
+
+    const dir = new T3.Vector3(nx - state.x, 0, nz - state.z);
+    if (dir.lengthSq() < 1e-6) dir.set(Math.random() - .5, 0, Math.random() - .5);
+    dir.normalize();
+    const axis = new T3.Vector3().crossVectors(UP, dir).normalize();
+    const turns = (reduced ? 1 : 2 + Math.floor(Math.random() * 2)) * Math.PI * 2;
+    const D = qf.clone().invert().multiply(state.q);
+
+    let t0 = 0; const marks = [];
+    for (const b of BOUNCES) { marks.push({ s: t0, ...b }); t0 += b.d; }
+    const total = t0 + SETTLE;
+
+    state.anim = {
+      start: performance.now(), total, marks, qf, D, axis, turns,
+      x0: state.x, z0: state.z, x1: nx, z1: nz, val, landed: 0
+    };
+  }
+
+  const qa = new T3.Quaternion(), qs = new T3.Quaternion(), I = new T3.Quaternion();
+  function step(now) {
+    const a = state.anim;
+    if (a) {
+      const t = Math.min((now - a.start) / 1000, a.total);
+      const u = t / a.total;
+      const spin = 1 - Math.pow(1 - u, 2.6);
+
+      qa.setFromAxisAngle(a.axis, a.turns * (1 - spin));
+      qs.copy(I).slerp(a.D, 1 - spin);
+      const q = qa.clone().multiply(a.qf).multiply(qs);
+
+      let hop = 0;
+      for (let i = 0; i < a.marks.length; i++) {
+        const m = a.marks[i];
+        if (t >= m.s && t < m.s + m.d) { const k = (t - m.s) / m.d; hop = 4 * m.h * k * (1 - k); }
+        if (t >= m.s + m.d && a.landed <= i) { a.landed = i + 1; clack(Math.sqrt(m.h / 2.8)); }
+      }
+      const slide = 1 - Math.pow(1 - Math.min(1, t / (a.total - SETTLE)), 2);
+      const x = a.x0 + (a.x1 - a.x0) * slide, z = a.z0 + (a.z1 - a.z0) * slide;
+
+      die.quaternion.copy(q);
+      die.position.set(x, supportHeight(q) + hop, z);
+
+      if (t >= a.total) {
+        state.q.copy(a.qf); state.x = a.x1; state.z = a.z1;
+        die.quaternion.copy(a.qf); die.position.set(a.x1, H, a.z1);
+        state.anim = null; state.rolling = false; state.rolls++;
+        vtext.textContent = TEXTS[a.val];
+        if (mode === "grams") state.grams = (state.grams || 0) + 1;
+        vwarn.textContent = mode === "grams" && state.grams >= 6 ? "Пора к Шлюшандрам" : "";
+        vbottom.textContent = mode === "grams" && state.grams >= 3 ? "Ну что к Войтюшку!!!" : "";
+        verdict.classList.remove("hide");
+        void vtext.offsetWidth;
+        verdict.classList.add("show");
+        hint.textContent = "Нажми ещё раз";
+        count.textContent = `Бросков: ${state.rolls}`;
+      }
+    }
+    renderer.render(scene, camera);
+    requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+
+  host.addEventListener("pointerdown", e => { e.preventDefault(); roll(); });
+
+  const modeBtn = document.getElementById("mode");
+  function setMode(m) {
+    mode = m;
+    TEXTS = MODES[m].t;
+    document.getElementById("sub").textContent = MODES[m].sub;
+    modeBtn.querySelectorAll("span").forEach(s => s.classList.toggle("on", s.dataset.m === m));
+    drawAllFaces();
+    verdict.classList.remove("show", "hide");
+    vtext.textContent = "";
+    vwarn.textContent = "";
+    vbottom.textContent = "";
+    hint.textContent = "Нажми на кубик";
+  }
+  modeBtn.addEventListener("click", () => {
+    if (state.rolling) return;
+    setMode(mode === "drink" ? "grams" : "drink");
+  });
+  host.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); roll(); } });
+})();
+</script>
+
+</html>
