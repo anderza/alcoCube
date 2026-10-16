@@ -2,6 +2,15 @@ plugins {
     id("com.android.application")
 }
 
+// Версия и подпись задаются снаружи (GitHub Actions или ваш терминал), чтобы в репозитории не было секретов.
+val appVersionCode = (System.getenv("VERSION_CODE") ?: "1").toInt()
+val appVersionName = System.getenv("VERSION_NAME") ?: "1.0"
+
+val keystoreFile = System.getenv("KEYSTORE_FILE")?.let { file(it) }
+val hasKeystore = keystoreFile != null && keystoreFile.exists()
+
+base.archivesName.set("alcoCube")
+
 android {
     namespace = "by.kubik.drunkdice"
     compileSdk = 34
@@ -10,13 +19,27 @@ android {
         applicationId = "by.kubik.drunkdice"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = appVersionCode
+        versionName = appVersionName
+    }
+
+    signingConfigs {
+        if (hasKeystore) {
+            create("release") {
+                storeFile = keystoreFile
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (hasKeystore) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 

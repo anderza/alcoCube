@@ -19,11 +19,44 @@
 
 ### На Android
 
-Приложение — это `WebView` с той же страницей внутри.
+Приложение — это `WebView` с той же страницей внутри. Собирается через Gradle (`build`).
 
-- **Готовый APK из GitHub Actions.** После пуша в `main` откройте вкладку **Actions → Android APK** и скачайте артефакт `pyany-kubik-debug-apk`. Если запушить тег вида `v1.0`, APK прикрепится к релизу.
-- **Android Studio.** `File → Open`, выберите папку проекта, затем `Build → Build APK(s)`. Файл появится в `app/build/outputs/apk/debug/app-debug.apk`.
-- **Командная строка.** При установленном Android SDK: `./gradlew assembleDebug`.
+**Автоматически, в GitHub Actions** (вкладка **Actions → Android build**). После каждого пуша в `main` сборка выдаёт артефакты:
+
+| Артефакт | Когда появляется | Для чего |
+| --- | --- | --- |
+| `alcoCube-debug-apk` | всегда | поставить на телефон и проверить |
+| `alcoCube-release-apk` | если добавлены секреты подписи | подписанный APK для раздачи |
+| `alcoCube-release-aab` | если добавлены секреты подписи | пакет для Google Play |
+
+Если запушить тег вида `v1.0`, файлы прикрепятся к релизу, а версия приложения станет `1.0`.
+
+**Подпись.** Один раз создайте ключ и добавьте четыре секрета в **Settings → Secrets and variables → Actions**:
+
+```bash
+keytool -genkeypair -v -keystore alcocube.jks -alias alcocube \
+  -keyalg RSA -keysize 2048 -validity 10000
+base64 -w0 alcocube.jks      # на Mac: base64 -i alcocube.jks
+```
+
+| Секрет | Значение |
+| --- | --- |
+| `KEYSTORE_BASE64` | вывод команды `base64` |
+| `KEYSTORE_PASSWORD` | пароль хранилища |
+| `KEY_ALIAS` | `alcocube` |
+| `KEY_PASSWORD` | пароль ключа |
+
+Файл `alcocube.jks` храните в надёжном месте и не добавляйте в репозиторий: без него нельзя будет выпустить обновление. Он уже внесён в `.gitignore`.
+
+**Локально.** Нужны JDK 17 и Android SDK (проще всего поставить Android Studio):
+
+```bash
+./scripts/build-android.sh            # отладочный APK в папку dist/
+./scripts/build-android.sh release    # подписанные APK и AAB, нужны KEYSTORE_FILE,
+                                      # KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD
+```
+
+Либо в Android Studio: `File → Open`, затем `Build → Build APK(s)`.
 
 Чтобы поставить APK на телефон, разрешите установку из неизвестных источников.
 
@@ -32,7 +65,8 @@
 ```
 web/index.html      игра (одна страница, HTML + CSS + JS)
 app/                Android-обёртка (WebView)
-.github/workflows/  сборка APK и публикация на GitHub Pages
+scripts/            локальная сборка Android (build-android.sh)
+.github/workflows/  сборка APK/AAB и публикация на GitHub Pages
 ```
 
 Страница `web/index.html` — единственный источник игры. Android-приложение подключает папку `web/` как свои ресурсы, поэтому после правки игры достаточно пересобрать приложение.
