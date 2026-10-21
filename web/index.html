@@ -159,8 +159,13 @@ h1 {
   const TEXT_UP = [[0,1,0],[0,1,0],[0,0,-1],[0,0,1],[0,1,0],[0,1,0]].map(a => new T3.Vector3(...a));
 
   // ---------- renderer / scene ----------
-  const renderer = new T3.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+  // Phones: cap resolution, smaller shadow map, no clearcoat, and draw frames only while something moves
+  const mobile = /Android|iPhone|iPad|Mobi/i.test(navigator.userAgent) || Math.min(screen.width, screen.height) < 820;
+  const dpr = Math.min(devicePixelRatio || 1, mobile ? 1.5 : 2);
+  const renderer = new T3.WebGLRenderer({ antialias: dpr < 1.5, powerPreference: "high-performance" });
+  renderer.setPixelRatio(dpr);
+  let looping = false;
+  function wake() { if (!looping) { looping = true; requestAnimationFrame(step); } }
   renderer.outputEncoding = T3.sRGBEncoding;
   renderer.toneMapping = T3.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
@@ -198,7 +203,7 @@ h1 {
   lamp.position.set(2.2, 11, 3.5);
   lamp.target.position.set(0, 0, 0);
   lamp.castShadow = true;
-  lamp.shadow.mapSize.set(2048, 2048);
+  lamp.shadow.mapSize.set(mobile ? 1024 : 2048, mobile ? 1024 : 2048);
   lamp.shadow.bias = -0.0004;
   lamp.shadow.radius = 4;
   lamp.shadow.camera.near = 4; lamp.shadow.camera.far = 22;
@@ -244,7 +249,7 @@ h1 {
 
   // ---------- die ----------
   const H = 1, R = 0.2; // half size, edge radius
-  const geo = new T3.BoxGeometry(2 * H, 2 * H, 2 * H, 28, 28, 28);
+  const geo = new T3.BoxGeometry(2 * H, 2 * H, 2 * H, 16, 16, 16);
   (() => {
     const pos = geo.attributes.position, nor = geo.attributes.normal;
     const p = new T3.Vector3(), inner = new T3.Vector3(), d = new T3.Vector3(), lim = H - R;
@@ -351,16 +356,19 @@ h1 {
       paintFace(v, f.c.getContext("2d"), f.bc.getContext("2d"), S);
       f.map.needsUpdate = f.bump.needsUpdate = true;
     });
+    wake();
   }
   drawAllFaces();
   if (document.fonts && document.fonts.load) {
     document.fonts.load('40px "Russo One"', "АБВ").then(drawAllFaces).catch(() => {});
   }
 
-  const mats = faceTex.map(f => new T3.MeshPhysicalMaterial({
-    map: f.map, bumpMap: f.bump, bumpScale: 0.035,
-    roughness: 0.34, metalness: 0, clearcoat: 0.7, clearcoatRoughness: 0.18, envMapIntensity: 0.9
-  }));
+  const mats = faceTex.map(f => mobile
+    ? new T3.MeshStandardMaterial({ map: f.map, bumpMap: f.bump, bumpScale: 0.035, roughness: 0.28, metalness: 0, envMapIntensity: 1.1 })
+    : new T3.MeshPhysicalMaterial({
+      map: f.map, bumpMap: f.bump, bumpScale: 0.035,
+      roughness: 0.34, metalness: 0, clearcoat: 0.7, clearcoatRoughness: 0.18, envMapIntensity: 0.9
+    }));
   const die = new T3.Mesh(geo, mats);
   die.castShadow = true;
   die.receiveShadow = true;
@@ -395,6 +403,7 @@ h1 {
     camera.position.copy(camTarget).addScaledVector(camDir, dist);
     camera.lookAt(camTarget);
     camera.updateProjectionMatrix();
+    wake();
   }
   addEventListener("resize", resize);
   resize();
@@ -469,6 +478,7 @@ h1 {
       start: performance.now(), total, marks, qf, D, axis, turns,
       x0: state.x, z0: state.z, x1: nx, z1: nz, val, landed: 0
     };
+    wake();
   }
 
   const qa = new T3.Quaternion(), qs = new T3.Quaternion(), I = new T3.Quaternion();
@@ -511,9 +521,10 @@ h1 {
       }
     }
     renderer.render(scene, camera);
-    requestAnimationFrame(step);
+    // idle die: stop the loop so the phone is not redrawing an unchanged frame 60 times a second
+    if (state.anim) requestAnimationFrame(step); else looping = false;
   }
-  requestAnimationFrame(step);
+  wake();
 
   host.addEventListener("pointerdown", e => { e.preventDefault(); roll(); });
 
