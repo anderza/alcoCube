@@ -6,6 +6,10 @@ on:
     tags: ['v*']
   pull_request:
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Версия релиза, например 1.1 (пусто — без релиза)'
+        required: false
 
 permissions:
   contents: write
@@ -32,6 +36,10 @@ jobs:
           echo "VERSION_CODE=${{ github.run_number }}" >> "$GITHUB_ENV"
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             echo "VERSION_NAME=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+            echo "RELEASE_TAG=$GITHUB_REF_NAME" >> "$GITHUB_ENV"
+          elif [ -n "${{ github.event.inputs.version }}" ]; then
+            echo "VERSION_NAME=${{ github.event.inputs.version }}" >> "$GITHUB_ENV"
+            echo "RELEASE_TAG=v${{ github.event.inputs.version }}" >> "$GITHUB_ENV"
           else
             echo "VERSION_NAME=1.0.${{ github.run_number }}" >> "$GITHUB_ENV"
           fi
@@ -79,16 +87,37 @@ jobs:
           name: alcoCube-release-aab
           path: app/build/outputs/bundle/release/*.aab
 
+      - name: Архив с игрой (APK + html)
+        if: env.RELEASE_TAG != ''
+        run: |
+          mkdir -p dist/alcoCube
+          if [ "${{ steps.signing.outputs.signed }}" = "true" ]; then
+            cp app/build/outputs/apk/release/*.apk "dist/alcoCube/alcoCube-$VERSION_NAME.apk"
+          else
+            cp app/build/outputs/apk/debug/*.apk "dist/alcoCube/alcoCube-$VERSION_NAME.apk"
+          fi
+          cp web/index.html dist/alcoCube/index.html
+          (cd dist && zip -r "alcoCube-$VERSION_NAME.zip" alcoCube)
+
       - name: Релиз с подписанными файлами
-        if: startsWith(github.ref, 'refs/tags/v') && steps.signing.outputs.signed == 'true'
+        if: env.RELEASE_TAG != '' && steps.signing.outputs.signed == 'true'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: ${{ env.VERSION_NAME }}
+          target_commitish: ${{ github.sha }}
           files: |
             app/build/outputs/apk/release/*.apk
             app/build/outputs/bundle/release/*.aab
+            dist/*.zip
 
       - name: Релиз с отладочным APK
-        if: startsWith(github.ref, 'refs/tags/v') && steps.signing.outputs.signed != 'true'
+        if: env.RELEASE_TAG != '' && steps.signing.outputs.signed != 'true'
         uses: softprops/action-gh-release@v2
         with:
-          files: app/build/outputs/apk/debug/*.apk
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: ${{ env.VERSION_NAME }}
+          target_commitish: ${{ github.sha }}
+          files: |
+            app/build/outputs/apk/debug/*.apk
+            dist/*.zip

@@ -159,9 +159,11 @@ h1 {
   const TEXT_UP = [[0,1,0],[0,1,0],[0,0,-1],[0,0,1],[0,1,0],[0,1,0]].map(a => new T3.Vector3(...a));
 
   // ---------- renderer / scene ----------
-  // Phones: cap resolution, smaller shadow map, no clearcoat, and draw frames only while something moves
+  // Phones: native-ish resolution, a painted shadow instead of a shadow map, no clearcoat,
+  // and frames drawn only while something moves
   const mobile = /Android|iPhone|iPad|Mobi/i.test(navigator.userAgent) || Math.min(screen.width, screen.height) < 820;
-  const dpr = Math.min(devicePixelRatio || 1, mobile ? 1.5 : 2);
+  const dpr = mobile ? 1 : Math.min(devicePixelRatio || 1, 2);
+  const aniso = () => mobile ? 2 : renderer.capabilities.getMaxAnisotropy();
   const renderer = new T3.WebGLRenderer({ antialias: dpr < 1.5, powerPreference: "high-performance" });
   renderer.setPixelRatio(dpr);
   let looping = false;
@@ -169,7 +171,7 @@ h1 {
   renderer.outputEncoding = T3.sRGBEncoding;
   renderer.toneMapping = T3.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
-  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.enabled = !mobile;
   renderer.shadowMap.type = T3.PCFSoftShadowMap;
   host.appendChild(renderer.domElement);
 
@@ -202,7 +204,7 @@ h1 {
   const lamp = new T3.SpotLight(0xffd29a, 2.2, 40, 0.62, 0.75, 1.2);
   lamp.position.set(2.2, 11, 3.5);
   lamp.target.position.set(0, 0, 0);
-  lamp.castShadow = true;
+  lamp.castShadow = !mobile;
   lamp.shadow.mapSize.set(mobile ? 1024 : 2048, mobile ? 1024 : 2048);
   lamp.shadow.bias = -0.0004;
   lamp.shadow.radius = 4;
@@ -236,7 +238,7 @@ h1 {
     t.encoding = T3.sRGBEncoding;
     t.wrapS = t.wrapT = T3.RepeatWrapping;
     t.repeat.set(2.5, 2.5);
-    t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    t.anisotropy = aniso();
     return t;
   })();
   const table = new T3.Mesh(
@@ -346,7 +348,7 @@ h1 {
     const c = document.createElement("canvas"); c.width = c.height = S;
     const bc = document.createElement("canvas"); bc.width = bc.height = S;
     const map = new T3.CanvasTexture(c); map.encoding = T3.sRGBEncoding;
-    map.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    map.anisotropy = aniso();
     const bump = new T3.CanvasTexture(bc);
     return { c, bc, map, bump };
   });
@@ -373,6 +375,26 @@ h1 {
   die.castShadow = true;
   die.receiveShadow = true;
   scene.add(die);
+
+  // phones: soft painted shadow that follows the die instead of a real shadow map
+  let blob = null;
+  if (mobile) {
+    const c = document.createElement("canvas"); c.width = c.height = 128;
+    const g = c.getContext("2d"), rg = g.createRadialGradient(64, 64, 10, 64, 64, 64);
+    rg.addColorStop(0, "rgba(0,0,0,.75)"); rg.addColorStop(.45, "rgba(0,0,0,.5)"); rg.addColorStop(1, "rgba(0,0,0,0)");
+    g.fillStyle = rg; g.fillRect(0, 0, 128, 128);
+    blob = new T3.Mesh(new T3.PlaneGeometry(3.4, 3.4),
+      new T3.MeshBasicMaterial({ map: new T3.CanvasTexture(c), transparent: true, depthWrite: false }));
+    blob.rotation.x = -Math.PI / 2;
+    scene.add(blob);
+  }
+  function syncBlob() {
+    if (!blob) return;
+    const p = die.position, lift = Math.max(0, p.y - H);
+    blob.position.set(p.x - 0.2 * p.y, 0.01, p.z - 0.32 * p.y);
+    blob.scale.setScalar(1 + lift * 0.18);
+    blob.material.opacity = 1 / (1 + lift * 0.7);
+  }
 
   // ---------- orientation helpers ----------
   const UP = new T3.Vector3(0, 1, 0);
@@ -520,6 +542,7 @@ h1 {
         count.textContent = `Бросков: ${state.rolls}`;
       }
     }
+    syncBlob();
     renderer.render(scene, camera);
     // idle die: stop the loop so the phone is not redrawing an unchanged frame 60 times a second
     if (state.anim) requestAnimationFrame(step); else looping = false;
