@@ -64,7 +64,7 @@ h1 {
   box-shadow: 0 4px 18px rgba(0,0,0,.5);
 }
 .mode span {
-  min-height: 40px; min-width: 110px; padding: 0 18px; display: grid; place-items: center;
+  min-height: 40px; min-width: 92px; padding: 0 14px; display: grid; place-items: center;
   border-radius: 999px; font-family: var(--display); font-size: 15px; letter-spacing: .03em;
   color: var(--muted); transition: background .2s, color .2s;
 }
@@ -117,7 +117,7 @@ h1 {
   </header>
   <footer class="foot">
     <div class="notes" aria-live="polite"><div class="note" id="vwarn"></div><div class="note" id="vbottom"></div></div>
-    <button class="mode" id="mode" type="button" aria-label="Переключить режим кубика"><span data-m="drink" class="on">Выпивка</span><span data-m="grams">Граммы</span></button>
+    <button class="mode" id="mode" type="button" aria-label="Переключить режим кубика"><span data-m="drink" class="on">Выпивка</span><span data-m="grams">Граммы</span><span data-m="dice">Кубик</span></button>
     <div class="hint" id="hint">Нажми на кубик</div>
     <div class="count" id="count"></div>
   </footer>
@@ -138,11 +138,23 @@ h1 {
   // Values per BoxGeometry face group: +x, -x, +y, -y, +z, -z (opposites sum to 7)
   const MODES = {
     drink: { sub: "Пусть решит судьба, что сегодня в стакане", t: { 1: "Не пью", 2: "Бухну пивка", 3: "Дерну винишка", 4: "Накидаюсь самогоном", 5: "Хлебну коньячка", 6: "Бухаю по черному" } },
-    grams: { sub: "Пусть судьба отмерит, сколько налить", t: { 1: "10 грамм", 2: "20 грамм", 3: "30 грамм", 4: "40 грамм", 5: "50 грамм", 6: "60 грамм" } }
+    grams: { sub: "Пусть судьба отмерит, сколько налить", t: { 1: "10 грамм", 2: "20 грамм", 3: "30 грамм", 4: "40 грамм", 5: "50 грамм", 6: "60 грамм" } },
+    dice: { sub: "Обычный кубик, как на настоящем столе", t: { 1: "1", 2: "2", 3: "3", 4: "4", 5: "5", 6: "6" } }
+  };
+  const MODE_ORDER = ["drink", "grams", "dice"];
+  // Classic pip layouts on a 3x3 grid (-1..1); diagonals go corner to corner like on a real die
+  const PIPS = {
+    1: [[0, 0]],
+    2: [[-1, -1], [1, 1]],
+    3: [[-1, -1], [0, 0], [1, 1]],
+    4: [[-1, -1], [1, -1], [-1, 1], [1, 1]],
+    5: [[-1, -1], [1, -1], [0, 0], [-1, 1], [1, 1]],
+    6: [[-1, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [1, 1]]
   };
   let mode = "drink";
   let TEXTS = MODES.drink.t;
-  const GROUP_VAL = [2, 5, 1, 6, 3, 4];
+  // 1-2-3 run counterclockwise around their shared corner, as on a standard (Western) die
+  const GROUP_VAL = [2, 5, 1, 6, 4, 3];
   const NORMALS = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]].map(a => new T3.Vector3(...a));
   const TEXT_UP = [[0,1,0],[0,1,0],[0,0,-1],[0,0,1],[0,1,0],[0,1,0]].map(a => new T3.Vector3(...a));
 
@@ -273,6 +285,22 @@ h1 {
     const b = bumpCtx;
     b.fillStyle = "#fff"; b.fillRect(0, 0, S, S);
     b.filter = "blur(3px)";
+
+    if (mode === "dice") {
+      // real die: black drilled pips only, the single pip is a bit larger
+      const pr = S * (val === 1 ? .115 : .088), off = S * .255;
+      for (const [cx, cy] of PIPS[val]) {
+        const x = S / 2 + cx * off, y = S / 2 + cy * off;
+        const rg = g.createRadialGradient(x + pr * .3, y + pr * .3, pr * .1, x, y, pr);
+        rg.addColorStop(0, "#3a332c"); rg.addColorStop(.8, "#16110d"); rg.addColorStop(1, "#000");
+        g.fillStyle = rg; g.beginPath(); g.arc(x, y, pr, 0, Math.PI * 2); g.fill();
+        g.strokeStyle = "rgba(255,255,255,.55)"; g.lineWidth = S * .006;
+        g.beginPath(); g.arc(x, y, pr + S * .004, Math.PI * .15, Math.PI * .85); g.stroke();
+        b.fillStyle = "#000"; b.beginPath(); b.arc(x, y, pr, 0, Math.PI * 2); b.fill();
+      }
+      b.filter = "none";
+      return;
+    }
 
     // pips in a row near the top
     const pr = S * (val > 4 ? .034 : .04), gap = pr * 2.7;
@@ -502,9 +530,11 @@ h1 {
     vbottom.textContent = "";
     hint.textContent = "Нажми на кубик";
   }
-  modeBtn.addEventListener("click", () => {
+  modeBtn.addEventListener("click", e => {
     if (state.rolling) return;
-    setMode(mode === "drink" ? "grams" : "drink");
+    const picked = e.target.closest && e.target.closest("span[data-m]");
+    const next = picked ? picked.dataset.m : MODE_ORDER[(MODE_ORDER.indexOf(mode) + 1) % MODE_ORDER.length];
+    if (next !== mode) setMode(next);
   });
   host.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); roll(); } });
 })();
